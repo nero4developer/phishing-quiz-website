@@ -798,6 +798,37 @@ main {
 }
 .badge-card.earned .badge-name { color: var(--accent); }
 
+/* Weak Areas */
+.weak-areas-block { margin-bottom: 24px; }
+.wa-row {
+  display: flex; align-items: center; gap: 12px;
+  margin-bottom: 11px;
+}
+.wa-label {
+  font-size: 12px; color: var(--ink); font-weight: 500;
+  min-width: 160px; flex-shrink: 0;
+}
+.wa-bar-wrap {
+  flex: 1; height: 5px;
+  background: rgba(255,255,255,0.06);
+  border-radius: 3px; overflow: hidden;
+}
+.wa-bar {
+  height: 100%; border-radius: 3px; width: 0%;
+  background: linear-gradient(90deg, var(--red-alert), #c04030);
+  transition: width 0.7s cubic-bezier(0.4,0,0.2,1);
+}
+.wa-stat {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px; color: var(--text-muted);
+  white-space: nowrap; min-width: 68px; text-align: right;
+}
+.wa-pct { color: var(--red-alert); margin-left: 4px; }
+.wa-all-correct {
+  font-family: 'DM Mono', monospace;
+  font-size: 11px; color: var(--green-ok); padding: 8px 0;
+}
+
 /* Review */
 .review-block { margin-bottom: 32px; }
 .review-item {
@@ -1702,6 +1733,9 @@ footer {
       <div class="block-label">// achievements unlocked</div>
       <div class="badges-grid" id="badges-grid"></div>
     </div>
+
+    <!-- Weak Areas -->
+    <div class="weak-areas-block" id="weak-areas-block"></div>
 
     <!-- Review -->
     <div class="review-block">
@@ -3875,6 +3909,9 @@ function showResults() {
     </div>`
   ).join('');
 
+  // Weak areas
+  renderWeakAreas(qs);
+
   // Review list
   document.getElementById('review-list').innerHTML = userAnswers.map((a, i) => {
     const q = qs[i];
@@ -3901,6 +3938,85 @@ function showResults() {
       </div>
     </div>`;
   }).join('');
+}
+
+// ══════════════════════════════════════════
+// WEAK AREA REPORT
+// ══════════════════════════════════════════
+function renderWeakAreas(qs) {
+  const block = document.getElementById('weak-areas-block');
+  if (!block) return;
+
+  const LABELS = {
+    // AWS
+    iam: 'IAM & Permissions',    s3: 'S3 Bucket Security',   ec2: 'EC2 & Compute',
+    ct:  'CloudTrail Logging',   vpc: 'VPC Flow Logs',        lambda: 'Lambda Security',
+    sg:  'Security Groups',
+    // Social Engineering
+    vishing: 'Vishing (Phone)',  pretexting: 'Pretexting',    baiting: 'Baiting',
+    impersonation: 'Impersonation', qrcode: 'QR Code Phishing',
+    // General Cybersecurity
+    passwords: 'Password Security', mfa: 'Multi-Factor Auth', malware: 'Malware',
+    network: 'Network Security',    ransomware: 'Ransomware',  updates: 'Patch Management',
+    encryption: 'Encryption',       incidentresponse: 'Incident Response',
+    databreach: 'Data Breach',      zerotrust: 'Zero Trust',
+  };
+
+  // Build category → { label, wrong, total }
+  const cats = {};
+  qs.forEach((q, i) => {
+    let key, label;
+    if (activeModule === 'phishing') {
+      if (q.isPhishing) {
+        key   = q.tags && q.tags[0] ? q.tags[0] : 'Phishing Detection';
+        label = key;
+      } else {
+        key   = '__legit__';
+        label = 'Legitimate Recognition';
+      }
+    } else {
+      key   = q.service || q.type || q.topic || 'general';
+      label = LABELS[key] || (key.charAt(0).toUpperCase() + key.slice(1));
+    }
+    if (!cats[key]) cats[key] = { label, wrong: 0, total: 0 };
+    cats[key].total++;
+    if (userAnswers[i] && !userAnswers[i].correct) cats[key].wrong++;
+  });
+
+  const wrongCats = Object.values(cats)
+    .filter(v => v.wrong > 0)
+    .sort((a, b) => (b.wrong / b.total) - (a.wrong / a.total));
+
+  if (wrongCats.length === 0) {
+    block.innerHTML = `
+      <div class="block-label">// weak areas</div>
+      <div class="wa-all-correct">✓ No weak areas — you answered every question correctly.</div>`;
+    return;
+  }
+
+  const maxRatio = Math.max(...wrongCats.map(v => v.wrong / v.total));
+
+  block.innerHTML = `
+    <div class="block-label">// weak areas</div>
+    ${wrongCats.map(v => {
+      const pct  = Math.round((v.wrong / v.total) * 100);
+      const target = Math.round((v.wrong / v.total / maxRatio) * 100);
+      return `
+        <div class="wa-row">
+          <div class="wa-label">${v.label}</div>
+          <div class="wa-bar-wrap">
+            <div class="wa-bar" data-w="${target}"></div>
+          </div>
+          <div class="wa-stat">${v.wrong}/${v.total}<span class="wa-pct">${pct}%</span></div>
+        </div>`;
+    }).join('')}`;
+
+  // Animate bars on next frame so CSS transition fires
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    block.querySelectorAll('.wa-bar').forEach(bar => {
+      bar.style.width = bar.dataset.w + '%';
+    });
+  }));
 }
 
 function restartQuiz() {
